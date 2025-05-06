@@ -49,6 +49,11 @@ public class AiModelFactory {
         chatModelCache.put(key, model);
     }
 
+    /**
+     *  创建 LLM 实例
+     * @param options
+     * @return
+     */
     public static ChatLanguageModel createChatModel(AiModelOptions options) {
         assertNotEmpty("请设置模型参数", options);
         assertNotEmpty("请选择AI模型供应商", options.getProvider());
@@ -135,6 +140,15 @@ public class AiModelFactory {
         }
     }
 
+    /**
+     * 普通模型	请求发送后，等待完整回答后一次性返回。
+     *流式模型	请求发送后，边生成边返回 token（单词/字），即时呈现。
+     *
+     * 根据你传入的 AiModelOptions 动态创建不同厂商（如 OpenAI、智谱、千帆、通义千问、DeepSeek、Ollama）
+     * 的大语言模型（LLM）流式对话模型对象（StreamingChatLanguageModel），并使用缓存避免重复创建。
+     * @param options
+     * @return
+     */
     public static StreamingChatLanguageModel createStreamingChatModel(AiModelOptions options) {
         assertNotEmpty("请设置模型参数", options);
         assertNotEmpty("请选择AI模型供应商", options.getProvider());
@@ -210,7 +224,7 @@ public class AiModelFactory {
 
                     chatModel = dsBuilder.build();
             }
-
+//            缓存机制
             setCache(cacheKey, chatModel);
             return (StreamingChatLanguageModel)chatModel;
         }

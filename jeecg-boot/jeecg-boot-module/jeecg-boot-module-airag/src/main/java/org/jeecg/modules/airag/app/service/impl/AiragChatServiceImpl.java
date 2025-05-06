@@ -711,9 +711,12 @@ public class AiragChatServiceImpl implements IAiragChatService {
          * 是否正在思考
          */
         AtomicBoolean isThinking = new AtomicBoolean(false);
-        // ai聊天响应逻辑
+        //TODO ai聊天响应逻辑   使用 SSE（Server-Sent Events）返回流式大模型推理结果的完整响应处理逻辑
+        //  流式响应中间	onNext	每个 token 推送到前端，处理 <think> 状态提示
+        // 响应完成时	onComplete	判定推理是否成功结束，保存会话、关闭 SSE
+        // 异常处理	onError	出现异常时构造错误消息并关闭 SSE
         chatStream.onNext((String resMessage) -> {
-                    // 兼容推理模型
+                    // 兼容推理模型  // 特殊标志 "<think>" 提示“AI思考中”
                     if ("<think>".equals(resMessage)) {
                         isThinking.set(true);
                         resMessage = "> ";
@@ -722,11 +725,13 @@ public class AiragChatServiceImpl implements IAiragChatService {
                         isThinking.set(false);
                         resMessage = "\n\n";
                     }
+                    // 如果 AI 正在思考，每遇到换行就加上 "> " 作为提示符
                     if (isThinking.get()) {
                         if (null != resMessage && resMessage.contains("\n")) {
                             resMessage = "\n> ";
                         }
                     }
+                    // 构造 SSE 消息体
                     EventData eventData = new EventData(requestId, null, EventData.EVENT_MESSAGE, chatConversation.getId(), topicId);
                     EventMessageData messageEventData = EventMessageData.builder()
                             .message(resMessage)
@@ -758,7 +763,7 @@ public class AiragChatServiceImpl implements IAiragChatService {
                         return;
                     }
                     if (FinishReason.STOP.equals(finishReason) || null == finishReason) {
-                        // 正常结束
+                        // 正常结束：发送完成事件 + 保存会话
                         EventData eventData = new EventData(requestId, null, EventData.EVENT_MESSAGE_END, chatConversation.getId(), topicId);
                         try {
                             log.debug("[AI应用]接收LLM返回消息完成:{}", respText);
@@ -771,10 +776,10 @@ public class AiragChatServiceImpl implements IAiragChatService {
                         saveChatConversation(chatConversation,false,httpRequest);
                         closeSSE(emitter, eventData);
                     } else if (FinishReason.TOOL_EXECUTION.equals(finishReason)) {
-                        // 需要执行工具
+                        // 需要执行工具  // 需要工具调用（TODO 还没实现）
                         // TODO author: chenrui for: date:2025/3/7
                     } else {
-                        // 异常结束
+                        // 异常结束  // 异常结束，例如配额不足
                         log.error("调用模型异常:" + respText);
                         if (respText.contains("insufficient Balance")) {
                             respText = "大预言模型账号余额不足!";
@@ -785,7 +790,7 @@ public class AiragChatServiceImpl implements IAiragChatService {
                     }
                 })
                 .onError((Throwable error) -> {
-                    // sse
+                    // sse 出错时返回错误信息
                     SseEmitter emitter = AiragLocalCache.get(AiragConsts.CACHE_TYPE_SSE, requestId);
                     if (null == emitter) {
                         log.warn("[AI应用]接收LLM返回会话已关闭");
@@ -797,6 +802,7 @@ public class AiragChatServiceImpl implements IAiragChatService {
                     eventData.setData(EventFlowData.builder().success(false).message(errMsg).build());
                     closeSSE(emitter, eventData);
                 })
+                //        okenStream 的 start 方法才是真正发起与 LLM 交互的地方。
                 .start();
     }
 
